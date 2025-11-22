@@ -1,0 +1,3 @@
+imap-tools
+python-dotenv
+msal
