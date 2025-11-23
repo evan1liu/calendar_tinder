@@ -158,7 +158,7 @@ class EmailViewModel: ObservableObject {
     // IMPORTANT: Change this to your computer's local IP address when testing on a real device
     // To find your IP: Open Terminal and run: ifconfig | grep "inet " | grep -v 127.0.0.1
     // Use 127.0.0.1 for simulator, your local IP (e.g., 192.168.1.x) for real device
-    private let baseURL = "http://10.140.204.85:8000"  // Your computer's IP for real device
+    private let baseURL = "http://10.141.0.236:8000"  // Your computer's IP for real device
     
     func checkAuth() {
         guard let url = URL(string: "\(baseURL)/auth/status") else { return }
@@ -777,6 +777,11 @@ struct ContentView: View {
 
     // Saved cards storage
     @State private var savedCards: [EmailCard] = []
+    
+    // Animation States
+    @State private var showParticles = false
+    @State private var particleColor: Color = .red
+    @State private var showConfetti = false
 
     enum DisplayMode: String, CaseIterable {
         case swipe = "Swipe"
@@ -873,7 +878,7 @@ struct ContentView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(UIColor.systemGroupedBackground).edgesIgnoringSafeArea(.all))
+        .background(Color(UIColor.systemGroupedBackground))
     }
 
     var mainInterface: some View {
@@ -900,6 +905,16 @@ struct ContentView: View {
                     .padding(.leading)
 
                     Spacer()
+
+                    // Refresh Button
+                    Button(action: {
+                        viewModel.startEmailRefresh()
+                    }) {
+                        Image(systemName: "arrow.clockwise.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(.blue)
+                    }
+                    .padding(.trailing)
                 }
                 .padding(.top, 8)
 
@@ -913,6 +928,37 @@ struct ContentView: View {
                 .padding(.horizontal)
             }
             .padding(.bottom, 8)
+
+            // Status Indicator for Background Processing
+            if viewModel.batchStatus == "processing" || viewModel.batchStatus == "fetching" {
+                HStack {
+                    Text(viewModel.statusMessage.isEmpty ? "Processing..." : viewModel.statusMessage)
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                        .lineLimit(1)
+                    
+                    Spacer()
+                    
+                    Button(action: {
+                        viewModel.checkRefreshStatus()
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                            Text("Check Status")
+                        }
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color.orange.opacity(0.1))
+                        .foregroundColor(.orange)
+                        .cornerRadius(12)
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.bottom, 8)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
 
             if viewModel.isLoading || viewModel.isRefreshing {
                 VStack(spacing: 16) {
@@ -960,7 +1006,7 @@ struct ContentView: View {
                 }
             }
         }
-        .background(Color(UIColor.systemGroupedBackground).edgesIgnoringSafeArea(.all))
+        .background(Color(UIColor.systemGroupedBackground))
     }
 
     var emptySwipeView: some View {
@@ -1042,48 +1088,72 @@ struct ContentView: View {
                 Spacer()
 
                 // Middle: Card Deck with Swipe Gestures
-                ZStack {
-                    // Show next card below for visual effect
-                    if viewModel.currentIndex < viewModel.cards.count - 1 {
-                        EmailCardView(
-                            card: viewModel.cards[viewModel.currentIndex + 1],
-                            isInSubcardMode: false,
-                            subcardIndex: 0,
-                            onAddToCalendar: { _ in },
-                            onAddToReminder: { _ in },
-                            onSkip: { }
-                        )
-                        .scaleEffect(0.95)
-                        .offset(y: 10)
-                    }
+                GeometryReader { geometry in
+                    ZStack {
+                        // Show next card below for visual effect
+                        if viewModel.currentIndex < viewModel.cards.count - 1 {
+                            EmailCardView(
+                                card: viewModel.cards[viewModel.currentIndex + 1],
+                                isInSubcardMode: false,
+                                subcardIndex: 0,
+                                onAddToCalendar: { _ in },
+                                onAddToReminder: { _ in },
+                                onSkip: { }
+                            )
+                            .scaleEffect(0.95)
+                            .offset(y: 10)
+                        }
 
-                    // Current Card
-                    EmailCardView(
-                        card: viewModel.cards[viewModel.currentIndex],
-                        isInSubcardMode: viewModel.isInSubcardMode,
-                        subcardIndex: viewModel.currentSubcardIndex,
-                        onAddToCalendar: handleAddToCalendar,
-                        onAddToReminder: handleAddToReminder,
-                        onSkip: handleSkipSubcard
-                    )
-                    .offset(x: viewModel.isInSubcardMode ? 0 : offset.width, y: 0)
-                    .rotationEffect(.degrees(viewModel.isInSubcardMode ? 0 : Double(offset.width / 20)))
-                    .gesture(
-                        viewModel.isInSubcardMode ? nil :
-                        DragGesture()
-                            .onChanged { gesture in
-                                offset = gesture.translation
-                            }
-                            .onEnded { _ in
-                                if offset.width > 100 {
-                                    handleSwipeRight()
-                                } else if offset.width < -100 {
-                                    handleSwipeLeft()
-                                } else {
-                                    withAnimation { offset = .zero }
+                        // Current Card with overlay
+                        ZStack {
+                            EmailCardView(
+                                card: viewModel.cards[viewModel.currentIndex],
+                                isInSubcardMode: viewModel.isInSubcardMode,
+                                subcardIndex: viewModel.currentSubcardIndex,
+                                onAddToCalendar: handleAddToCalendar,
+                                onAddToReminder: handleAddToReminder,
+                                onSkip: handleSkipSubcard
+                            )
+                            .overlay(
+                                SwipeIndicatorOverlay(offset: offset.width, screenWidth: geometry.size.width)
+                                    .cornerRadius(20)
+                                    .allowsHitTesting(false)
+                            )
+                        }
+                        .offset(x: viewModel.isInSubcardMode ? 0 : offset.width, y: 0)
+                        .rotationEffect(.degrees(viewModel.isInSubcardMode ? 0 : Double(offset.width / 20)))
+                        .gesture(
+                            viewModel.isInSubcardMode ? nil :
+                            DragGesture()
+                                .onChanged { gesture in
+                                    offset = gesture.translation
                                 }
-                            }
-                    )
+                                .onEnded { _ in
+                                    if offset.width > 100 {
+                                        handleSwipeRight()
+                                    } else if offset.width < -100 {
+                                        handleSwipeLeft()
+                                    } else {
+                                        withAnimation(.spring(response: 0.3)) { 
+                                            offset = .zero 
+                                        }
+                                    }
+                                }
+                        )
+                        
+                        // Particle effects overlay
+                        if showParticles {
+                            ParticleSystem(isActive: showParticles, color: particleColor)
+                                .allowsHitTesting(false)
+                        }
+                        
+                        // Confetti effect overlay (for saves)
+                        if showConfetti {
+                            ConfettiEffect(isActive: showConfetti)
+                                .allowsHitTesting(false)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
 
                 Spacer()
@@ -1274,11 +1344,15 @@ struct ContentView: View {
 
     private func handleSwipeRight() {
         let card = viewModel.cards[viewModel.currentIndex]
+        
+        // Haptic feedback
+        let impactHeavy = UIImpactFeedbackGenerator(style: .medium)
+        impactHeavy.impactOccurred()
 
         // Check if this email has subcards (events or todos)
         if card.hasSubcards {
             // Enter subcard mode
-            withAnimation {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
                 viewModel.isInSubcardMode = true
                 viewModel.currentSubcardIndex = 0
                 offset = .zero
@@ -1288,18 +1362,27 @@ struct ContentView: View {
             savedCards.append(card)
             operationHistory.recordOperation(.swipeRight(card: card, addedToCalendar: false, addedToReminders: false))
 
-            withAnimation {
+            // Trigger confetti animation
+            showConfetti = true
+            
+            withAnimation(.easeOut(duration: 0.4)) {
                 offset = CGSize(width: 500, height: 0)
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                 viewModel.removeCurrentCard()
                 offset = .zero
+                showConfetti = false
             }
         }
     }
 
     private func handleSwipeLeft() {
         let card = viewModel.cards[viewModel.currentIndex]
+        
+        // Haptic feedback - stronger for delete
+        let impactHeavy = UIImpactFeedbackGenerator(style: .heavy)
+        impactHeavy.impactOccurred()
 
         // Record operation for undo/redo
         operationHistory.recordOperation(.swipeLeft(card: card, emailId: card.email.id))
@@ -1307,12 +1390,18 @@ struct ContentView: View {
         // Delete email from Outlook via Graph API
         viewModel.deleteEmail(emailId: card.email.id)
 
-        withAnimation {
+        // Trigger particle animation
+        particleColor = .red
+        showParticles = true
+        
+        withAnimation(.easeOut(duration: 0.4)) {
             offset = CGSize(width: -500, height: 0)
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
             viewModel.removeCurrentCard()
             offset = .zero
+            showParticles = false
         }
     }
 
@@ -1380,7 +1469,7 @@ struct ContentView: View {
         // Check if there are more subcards
         if viewModel.currentSubcardIndex < card.totalSubcards - 1 {
             // Move to next subcard
-            withAnimation {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
                 viewModel.currentSubcardIndex += 1
             }
         } else {
@@ -1391,13 +1480,21 @@ struct ContentView: View {
             // Exit subcard mode and move to next email
             viewModel.isInSubcardMode = false
             viewModel.currentSubcardIndex = 0
+            
+            // Trigger confetti animation
+            showConfetti = true
+            
+            // Haptic feedback
+            let impactMed = UIImpactFeedbackGenerator(style: .medium)
+            impactMed.impactOccurred()
 
-            withAnimation {
+            withAnimation(.easeOut(duration: 0.4)) {
                 offset = CGSize(width: 500, height: 0)
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                 viewModel.removeCurrentCard()
                 offset = .zero
+                showConfetti = false
             }
         }
     }

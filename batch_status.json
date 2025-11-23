@@ -1,6 +1,6 @@
 {
-  "status": "completed",
-  "message": "Successfully processed emails",
-  "last_updated": "2025-11-22T18:54:37.342129",
+  "status": "processing",
+  "message": "Categorizing 187 emails...",
+  "last_updated": "2025-11-23T00:43:16.900225",
   "count": 0
 }

@@ -10,7 +10,8 @@ import threading
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -293,7 +294,7 @@ def process_with_gemini_batch(emails_data: List[dict], category_map: Dict[str, s
     
     prompt_template = """
 Analyze the following email content and extract:
-1. A brief summary (1-2 sentences)
+1. A brief summary. As brief as possible, always be shorter than the body of the email. Do not ever start with "This email"
 2. Any specific Tasks (Todos) and Calendar Events
 
 Output strictly in JSON format matching these exact schemas:
@@ -394,8 +395,10 @@ Email Body: {body}
     try:
         # Upload file - MUST specify mime_type for JSONL
         batch_file = client.files.upload(
-            path=jsonl_filename,
-            mime_type='application/json'
+            file=jsonl_filename,
+            config=types.UploadFileConfig(
+                mime_type='application/json'
+            )
         )
         
         # Create batch job
