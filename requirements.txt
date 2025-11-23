@@ -4,3 +4,4 @@ msal
 fastapi
 uvicorn
 requests
+google-genai

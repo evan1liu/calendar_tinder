@@ -1,14 +1,13 @@
 from fastapi import FastAPI, HTTPException
-from msal import PublicClientApplication
+from msal import PublicClientApplication, SerializableTokenCache
 import requests
-import webbrowser
 import json
 import time
 import os
 import uuid
 import threading
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 from google import genai
 from google.genai import types
@@ -23,9 +22,30 @@ CLIENT_ID = "14d82eec-204b-4c2f-b7e8-296a70dab67e"
 TENANT_ID = "common"
 SCOPES = ["User.Read", "Mail.Read"]
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+TOKEN_CACHE_FILE = "token_cache.bin"
+
+# Global variable to store pending auth flow
+PENDING_FLOW: Optional[Dict[str, Any]] = None
 
 if not GEMINI_API_KEY:
     print("WARNING: GEMINI_API_KEY not found in environment variables. Batch processing will fail.")
+
+def get_msal_app():
+    cache = SerializableTokenCache()
+    if os.path.exists(TOKEN_CACHE_FILE):
+        with open(TOKEN_CACHE_FILE, "r") as f:
+            cache.deserialize(f.read())
+            
+    return PublicClientApplication(
+        CLIENT_ID,
+        authority=f"https://login.microsoftonline.com/{TENANT_ID}",
+        token_cache=cache
+    )
+
+def save_cache(app_msal):
+    if app_msal.token_cache.has_state_changed:
+        with open(TOKEN_CACHE_FILE, "w") as f:
+            f.write(app_msal.token_cache.serialize())
 
 class Todo(BaseModel):
     content: str
@@ -52,40 +72,75 @@ class Email(BaseModel):
 class ProcessedResponse(BaseModel):
     emails: List[Email]
 
-def get_graph_token():
-    app_msal = PublicClientApplication(
-        CLIENT_ID,
-        authority=f"https://login.microsoftonline.com/{TENANT_ID}"
-    )
+# Auth Global State
+AUTH_STATE = {
+    "status": "idle", # idle, waiting, logged_in, error
+    "error": None
+}
 
-    # 1. Check cache
+def get_graph_token():
+    app_msal = get_msal_app()
     accounts = app_msal.get_accounts()
-    result = None
     if accounts:
         result = app_msal.acquire_token_silent(SCOPES, account=accounts[0])
+        if result and "access_token" in result:
+            save_cache(app_msal)
+            return result["access_token"]
+    return None
 
-    # 2. Interactive login
-    if not result:
-        flow = app_msal.initiate_device_flow(scopes=SCOPES)
-        if "user_code" not in flow:
-            raise ValueError("Fail to create device flow")
-
-        print("\n" + "="*60)
-        print(f"USER ACTION REQUIRED: {flow['message']}")
-        print("="*60 + "\n")
-        
-        webbrowser.open(flow["verification_uri"])
+def wait_for_token_background(flow):
+    global AUTH_STATE
+    try:
+        app_msal = get_msal_app()
+        AUTH_STATE["status"] = "waiting"
         result = app_msal.acquire_token_by_device_flow(flow)
+        
+        if "access_token" in result:
+            save_cache(app_msal)
+            AUTH_STATE["status"] = "logged_in"
+            AUTH_STATE["error"] = None
+        else:
+            AUTH_STATE["status"] = "error"
+            AUTH_STATE["error"] = result.get("error_description", "Unknown error")
+    except Exception as e:
+        AUTH_STATE["status"] = "error"
+        AUTH_STATE["error"] = str(e)
 
-    if "access_token" in result:
-        return result["access_token"]
-    else:
-        return None
+@app.get("/auth/status")
+def auth_status():
+    # Check if we have a valid token in cache
+    token = get_graph_token()
+    if token:
+        return {"is_logged_in": True, "status": "logged_in"}
+    
+    return {
+        "is_logged_in": False, 
+        "status": AUTH_STATE["status"],
+        "error": AUTH_STATE["error"]
+    }
+
+@app.post("/auth/start")
+def auth_start():
+    app_msal = get_msal_app()
+    flow = app_msal.initiate_device_flow(scopes=SCOPES)
+    if "user_code" not in flow:
+        raise HTTPException(status_code=500, detail="Failed to create device flow")
+    
+    # Start background waiter
+    thread = threading.Thread(target=wait_for_token_background, args=(flow,), daemon=True)
+    thread.start()
+    
+    return {
+        "user_code": flow["user_code"],
+        "verification_uri": flow["verification_uri"],
+        "message": flow["message"],
+        "expires_in": flow.get("expires_in", 900)
+    }
 
 def fetch_emails_from_graph(days: int = 7) -> List[dict]:
     token = get_graph_token()
     if not token:
-        raise Exception("Authentication failed.")
+        raise Exception("Authentication failed. Please login via the app.")
 
     endpoint = "https://graph.microsoft.com/v1.0/me/messages"
     headers = {

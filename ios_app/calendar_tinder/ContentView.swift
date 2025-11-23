@@ -62,13 +62,11 @@ struct Email: Identifiable, Codable {
 enum CardType: Identifiable {
     case todo(Todo)
     case event(Event)
-    case originalEmail
     
     var id: String {
         switch self {
         case .todo(let t): return "todo-\(t.id)"
         case .event(let e): return "event-\(e.id)"
-        case .originalEmail: return "original"
         }
     }
 }
@@ -90,6 +88,18 @@ struct BatchStatus: Codable {
     let count: Int
 }
 
+struct AuthResponse: Codable {
+    let user_code: String
+    let verification_uri: String
+    let message: String
+}
+
+struct AuthStatusResponse: Codable {
+    let is_logged_in: Bool
+    let status: String?
+    let error: String?
+}
+
 class EmailViewModel: ObservableObject {
     @Published var cards: [Card] = []
     @Published var currentIndex: Int = 0
@@ -100,14 +110,105 @@ class EmailViewModel: ObservableObject {
     @Published var batchStatus: String = "idle"  // idle, fetching, processing, completed, error
     @Published var slideDirection: SlideDirection = .forward
     
+    // Auth State
+    @Published var isLoggedIn = false
+    @Published var loginCode: String?
+    @Published var loginUrl: String?
+    @Published var isWaitingForLogin = false
+    
     enum SlideDirection {
         case forward
         case backward
     }
     
+    // IMPORTANT: Change this to your computer's local IP address when testing on a real device
+    // To find your IP: Open Terminal and run: ifconfig | grep "inet " | grep -v 127.0.0.1
+    // Use 127.0.0.1 for simulator, your local IP (e.g., 192.168.1.x) for real device
+    private let baseURL = "http://10.141.0.236:8000"  // Your computer's IP for real device
+    
+    func checkAuth() {
+        guard let url = URL(string: "\(baseURL)/auth/status") else { return }
+        
+        URLSession.shared.dataTask(with: url) { data, response, error in
+            DispatchQueue.main.async {
+                if let data = data, let status = try? JSONDecoder().decode(AuthStatusResponse.self, from: data) {
+                    self.isLoggedIn = status.is_logged_in
+                    if self.isLoggedIn {
+                        self.fetchProcessedEmails()
+                    }
+                }
+            }
+        }.resume()
+    }
+
+    func startLogin() {
+        guard let url = URL(string: "\(baseURL)/auth/start") else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        
+        isLoading = true
+        errorMessage = nil
+        
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            DispatchQueue.main.async {
+                self.isLoading = false
+                if let error = error {
+                    self.errorMessage = "Login failed: \(error.localizedDescription)"
+                    return
+                }
+                
+                guard let data = data else { return }
+                
+                do {
+                    let authData = try JSONDecoder().decode(AuthResponse.self, from: data)
+                    self.loginCode = authData.user_code
+                    self.loginUrl = authData.verification_uri
+                    self.isWaitingForLogin = true
+                    
+                    // Start polling
+                    self.pollAuthStatus()
+                } catch {
+                    self.errorMessage = "Failed to decode auth response"
+                }
+            }
+        }.resume()
+    }
+    
+    func pollAuthStatus() {
+        guard isWaitingForLogin else { return }
+        
+        // Poll every 3 seconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            guard self.isWaitingForLogin else { return }
+            
+            guard let url = URL(string: "\(self.baseURL)/auth/status") else { return }
+            
+            URLSession.shared.dataTask(with: url) { data, response, error in
+                DispatchQueue.main.async {
+                    if let data = data, let status = try? JSONDecoder().decode(AuthStatusResponse.self, from: data) {
+                        if status.is_logged_in {
+                            self.isLoggedIn = true
+                            self.isWaitingForLogin = false
+                            self.loginCode = nil
+                            self.fetchProcessedEmails()
+                        } else if status.status == "error" {
+                            self.isWaitingForLogin = false
+                            self.errorMessage = status.error
+                        } else {
+                            // Keep polling
+                            self.pollAuthStatus()
+                        }
+                    } else {
+                        self.pollAuthStatus()
+                    }
+                }
+            }.resume()
+        }
+    }
+    
     func startEmailRefresh() {
         // Trigger the refresh endpoint (returns immediately)
-        guard let url = URL(string: "http://127.0.0.1:8000/refresh-emails") else { return }
+        guard let url = URL(string: "\(baseURL)/refresh-emails") else { return }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         
@@ -132,7 +233,7 @@ class EmailViewModel: ObservableObject {
     }
     
     func checkRefreshStatus() {
-        guard let url = URL(string: "http://127.0.0.1:8000/refresh-status") else { return }
+        guard let url = URL(string: "\(baseURL)/refresh-status") else { return }
         
         isLoading = true
         
@@ -167,7 +268,7 @@ class EmailViewModel: ObservableObject {
     }
     
     func fetchProcessedEmails() {
-        guard let url = URL(string: "http://127.0.0.1:8000/processed-emails") else { return }
+        guard let url = URL(string: "\(baseURL)/processed-emails") else { return }
         
         isLoading = true
         
@@ -209,10 +310,6 @@ class EmailViewModel: ObservableObject {
             for todo in email.todos {
                 newCards.append(Card(emailId: email.id, emailSubject: email.subject, type: .todo(todo), email: email))
             }
-            
-            // 3. Always add "View Original" card at the end of the email's stack
-            // (or if no events/todos, this is the only card)
-            newCards.append(Card(emailId: email.id, emailSubject: email.subject, type: .originalEmail, email: email))
         }
         
         self.cards = newCards
@@ -238,6 +335,7 @@ class EmailViewModel: ObservableObject {
 
 struct CardView: View {
     let card: Card
+    @State private var showingOriginalEmail = false
     
     var body: some View {
         VStack {
@@ -287,8 +385,24 @@ struct CardView: View {
                     }
                     .font(.subheadline)
                     .padding()
-                    .background(Color.gray.opacity(0.1))
+                    .background(Color(UIColor.secondarySystemGroupedBackground))
                     .cornerRadius(8)
+                    
+                    // View Original Email Button
+                    Button(action: {
+                        showingOriginalEmail = true
+                    }) {
+                        HStack {
+                            Image(systemName: "envelope.open")
+                            Text("View Original Email")
+                        }
+                        .font(.subheadline)
+                        .foregroundColor(.blue)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Color(UIColor.secondarySystemGroupedBackground))
+                        .cornerRadius(20)
+                    }
                 }
                 .padding()
                 
@@ -317,30 +431,45 @@ struct CardView: View {
                         .font(.subheadline)
                         .foregroundColor(.red)
                     }
-                }
-                .padding()
-                
-            case .originalEmail:
-                VStack(alignment: .leading) {
-                    HStack {
-                        Image(systemName: "envelope.open.fill")
-                        Text("Original Email")
+                    
+                    // View Original Email Button
+                    Button(action: {
+                        showingOriginalEmail = true
+                    }) {
+                        HStack {
+                            Image(systemName: "envelope.open")
+                            Text("View Original Email")
+                        }
+                        .font(.subheadline)
+                        .foregroundColor(.blue)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Color(UIColor.secondarySystemGroupedBackground))
+                        .cornerRadius(20)
                     }
-                    .font(.headline)
-                    .padding(.bottom, 5)
-                    
-                    Divider()
-                    
-                    WebView(htmlContent: card.email.body_html)
                 }
                 .padding()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.white)
+        .background(Color(UIColor.systemBackground))
         .cornerRadius(20)
-        .shadow(radius: 10)
+        .shadow(color: Color.black.opacity(0.2), radius: 10)
         .padding()
+        .sheet(isPresented: $showingOriginalEmail) {
+            NavigationView {
+                WebView(htmlContent: card.email.body_html)
+                    .navigationTitle("Original Email")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            Button("Done") {
+                                showingOriginalEmail = false
+                            }
+                        }
+                    }
+            }
+        }
     }
 }
 
@@ -348,6 +477,99 @@ struct ContentView: View {
     @StateObject var viewModel = EmailViewModel()
     
     var body: some View {
+        Group {
+            if viewModel.isLoggedIn {
+                mainInterface
+            } else {
+                loginInterface
+            }
+        }
+        .onAppear {
+            viewModel.checkAuth()
+        }
+    }
+
+    var loginInterface: some View {
+        VStack(spacing: 30) {
+            Text("Welcome to Email AI")
+                .font(.largeTitle)
+                .bold()
+            
+            if let code = viewModel.loginCode, let url = viewModel.loginUrl {
+                VStack(spacing: 20) {
+                    Text("Please login to your Microsoft Account")
+                        .font(.headline)
+                    
+                    Text("1. Copy this code:")
+                        .foregroundColor(.secondary)
+                    
+                    Text(code)
+                        .font(.system(size: 40, weight: .bold, design: .monospaced))
+                        .padding()
+                        .background(Color(UIColor.secondarySystemBackground))
+                        .cornerRadius(10)
+                        .onTapGesture {
+                            UIPasteboard.general.string = code
+                            let impactMed = UIImpactFeedbackGenerator(style: .medium)
+                            impactMed.impactOccurred()
+                        }
+                    
+                    Text("(Tap code to copy)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    Text("2. Open the login page:")
+                        .foregroundColor(.secondary)
+                    
+                    Link("Open Login Page", destination: URL(string: url)!)
+                        .font(.headline)
+                        .padding()
+                        .background(Color.blue)
+                        .foregroundColor(.white)
+                        .cornerRadius(10)
+                    
+                    if viewModel.isWaitingForLogin {
+                        VStack {
+                            ProgressView()
+                            Text("Waiting for you to login...")
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.top)
+                    }
+                }
+                .padding()
+                .background(Color(UIColor.systemBackground))
+                .cornerRadius(20)
+                .shadow(radius: 5)
+                .padding()
+                
+            } else {
+                if viewModel.isLoading {
+                    ProgressView()
+                } else {
+                    Button("Login with Microsoft") {
+                        viewModel.startLogin()
+                    }
+                    .font(.title2)
+                    .padding()
+                    .background(Color.blue)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
+                    
+                    if let error = viewModel.errorMessage {
+                        Text(error)
+                            .foregroundColor(.red)
+                            .multilineTextAlignment(.center)
+                            .padding()
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(UIColor.systemGroupedBackground).edgesIgnoringSafeArea(.all))
+    }
+
+    var mainInterface: some View {
         VStack {
             if viewModel.isLoading || viewModel.isRefreshing {
                 VStack(spacing: 16) {
@@ -442,8 +664,8 @@ struct ContentView: View {
                         .multilineTextAlignment(.center)
                         .padding()
                         .frame(maxWidth: .infinity)
-                        .background(Color.white)
-                        .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 2)
+                        .background(Color(UIColor.secondarySystemBackground))
+                        .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 2)
                         .zIndex(1) // Keep on top
                     
                     Spacer()
@@ -467,7 +689,7 @@ struct ContentView: View {
                             Image(systemName: "arrow.left.circle.fill")
                                 .resizable()
                                 .frame(width: 50, height: 50)
-                                .foregroundColor(viewModel.currentIndex > 0 ? .blue : .gray)
+                                .foregroundColor(viewModel.currentIndex > 0 ? Color.accentColor : Color.gray)
                         }
                         .disabled(viewModel.currentIndex == 0)
                         
@@ -481,17 +703,13 @@ struct ContentView: View {
                             Image(systemName: "arrow.right.circle.fill")
                                 .resizable()
                                 .frame(width: 50, height: 50)
-                                .foregroundColor(viewModel.currentIndex < viewModel.cards.count - 1 ? .blue : .gray)
+                                .foregroundColor(viewModel.currentIndex < viewModel.cards.count - 1 ? Color.accentColor : Color.gray)
                         }
                         .disabled(viewModel.currentIndex == viewModel.cards.count - 1)
                     }
                     .padding(.bottom, 30)
                 }
             }
-        }
-        .onAppear {
-            // Start by fetching existing; user can manually refresh
-            viewModel.fetchProcessedEmails()
         }
         .background(Color(UIColor.systemGroupedBackground).edgesIgnoringSafeArea(.all))
     }
@@ -503,3 +721,7 @@ struct ContentView_Previews: PreviewProvider {
     }
 }
 
+
+#Preview {
+    ContentView()
+}

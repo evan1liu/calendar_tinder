@@ -13,3 +13,6 @@ build/
 *.xcodeproj/xcuserdata
 *.xcworkspace
 DerivedData/
+
+# Secrets / Cache
+token_cache.bin
