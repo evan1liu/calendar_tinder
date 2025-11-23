@@ -160,7 +160,7 @@ class EmailViewModel: ObservableObject {
     // IMPORTANT: Change this to your computer's local IP address when testing on a real device
     // To find your IP: Open Terminal and run: ifconfig | grep "inet " | grep -v 127.0.0.1
     // Use 127.0.0.1 for simulator, your local IP (e.g., 192.168.1.x) for real device
-    private let baseURL = "http://10.141.0.236:8000"  // Your computer's IP for real device
+    private let baseURL = "http://10.140.204.85:8000"  // Your computer's IP for real device
     
     func checkAuth() {
         guard let url = URL(string: "\(baseURL)/auth/status") else { return }
@@ -476,66 +476,203 @@ class EmailViewModel: ObservableObject {
 
 // --- VIEWS ---
 
-struct SavedCardView: View {
-    let card: EmailCard
-    @State private var showingOriginalEmail = false
+struct ExpandableText: View {
+    let text: String
+    @State private var isExpanded = false
+    @State private var isTruncated = false
+    @State private var fullTextHeight: CGFloat = 0
+    @State private var truncatedTextHeight: CGFloat = 0
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(card.email.subject)
-                .font(.headline)
-                .lineLimit(2)
+        VStack(alignment: .leading, spacing: 4) {
+            if isExpanded {
+                // Scrollable expanded view
+                ScrollView {
+                    Text(text)
+                        .background(
+                            GeometryReader { geo in
+                                Color.clear.onAppear {
+                                    fullTextHeight = geo.size.height
+                                }
+                            }
+                        )
+                }
+                .frame(maxHeight: 150)
+            } else {
+                // Truncated view
+                Text(text)
+                    .lineLimit(3)
+                    .background(
+                        GeometryReader { geo in
+                            Color.clear.preference(key: TruncatedHeightKey.self, value: geo.size.height)
+                        }
+                    )
+                    .background(
+                        Text(text)
+                            .lineLimit(nil)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .hidden()
+                            .background(
+                                GeometryReader { geo in
+                                    Color.clear.preference(key: FullHeightKey.self, value: geo.size.height)
+                                }
+                            )
+                    )
+                    .onPreferenceChange(TruncatedHeightKey.self) { height in
+                        truncatedTextHeight = height
+                        checkTruncation()
+                    }
+                    .onPreferenceChange(FullHeightKey.self) { height in
+                        fullTextHeight = height
+                        checkTruncation()
+                    }
+            }
 
-            HStack {
-                Text(card.email.category ?? "Uncategorized")
-                    .font(.caption)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(categoryColor(for: card.email.category ?? "Uncategorized").opacity(0.2))
-                    .foregroundColor(categoryColor(for: card.email.category ?? "Uncategorized"))
-                    .cornerRadius(8)
-
-                Spacer()
+            if isTruncated {
+                Button(action: {
+                    withAnimation {
+                        isExpanded.toggle()
+                    }
+                }) {
+                    Text(isExpanded ? "Show less" : "Show more")
+                        .font(.caption)
+                        .foregroundColor(.blue)
+                }
             }
         }
-        .padding()
-        .frame(width: 200)
-        .background(Color(UIColor.secondarySystemBackground))
-        .cornerRadius(12)
-        .shadow(color: Color.black.opacity(0.1), radius: 4)
-        .onTapGesture {
-            showingOriginalEmail = true
-        }
-        .sheet(isPresented: $showingOriginalEmail) {
-            NavigationView {
-                WebView(htmlContent: card.email.body_html)
-                    .navigationTitle("Original Email")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .navigationBarTrailing) {
-                            Button("Done") {
-                                showingOriginalEmail = false
+    }
+
+    private func checkTruncation() {
+        // Only mark as truncated if full height is significantly larger than truncated height
+        isTruncated = fullTextHeight > truncatedTextHeight + 5
+    }
+}
+
+struct TruncatedHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+struct FullHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+struct SavedCardView: View {
+    let card: EmailCard
+    let onDelete: () -> Void
+    @State private var showingOriginalEmail = false
+    @State private var showDeleteButton = false
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(card.email.subject)
+                    .font(.headline)
+                    .lineLimit(2)
+
+                HStack {
+                    Text(card.email.category ?? "Uncategorized")
+                        .font(.caption)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(categoryColor(for: card.email.category ?? "Uncategorized").opacity(0.2))
+                        .foregroundColor(categoryColor(for: card.email.category ?? "Uncategorized"))
+                        .cornerRadius(8)
+
+                    Spacer()
+                }
+            }
+            .padding()
+            .frame(width: 200)
+            .background(Color(UIColor.secondarySystemBackground))
+            .cornerRadius(12)
+            .shadow(color: Color.black.opacity(0.1), radius: 4)
+            .scaleEffect(showDeleteButton ? 0.9 : 1.0)
+            .animation(.spring(response: 0.3), value: showDeleteButton)
+            .onTapGesture {
+                if !showDeleteButton {
+                    showingOriginalEmail = true
+                }
+            }
+            .onLongPressGesture {
+                withAnimation {
+                    showDeleteButton.toggle()
+                }
+                // Haptic feedback
+                let impactMed = UIImpactFeedbackGenerator(style: .medium)
+                impactMed.impactOccurred()
+            }
+            .sheet(isPresented: $showingOriginalEmail) {
+                NavigationView {
+                    WebView(htmlContent: card.email.body_html)
+                        .navigationTitle("Original Email")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .navigationBarTrailing) {
+                                Button("Done") {
+                                    showingOriginalEmail = false
+                                }
                             }
                         }
+                }
+            }
+
+            // Delete button overlay
+            if showDeleteButton {
+                Button(action: {
+                    withAnimation {
+                        onDelete()
+                        showDeleteButton = false
                     }
+                }) {
+                    Image(systemName: "trash.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(.white)
+                        .background(
+                            Circle()
+                                .fill(Color.red)
+                                .frame(width: 28, height: 28)
+                        )
+                }
+                .offset(x: 8, y: -8)
+                .transition(.scale.combined(with: .opacity))
             }
         }
     }
 
     func categoryColor(for category: String) -> Color {
-        switch category.lowercased() {
-        case "work":
-            return .blue
-        case "personal":
-            return .green
-        case "finance":
-            return .orange
-        case "travel":
-            return .purple
-        case "shopping":
-            return .pink
-        default:
-            return .gray
+        let cat = category.lowercased()
+
+        // Check for specific categories first (more specific matches)
+        if cat.contains("personal") && cat.contains("social") {
+            return .teal  // Personal/Social
+        } else if cat.contains("personal") && (cat.contains("club") || cat.contains("outreach")) {
+            return .green  // Personal/Club Outreach
+        } else if cat.contains("club") || cat.contains("rso") {
+            return .purple  // Club/RSO Communications
+        } else if cat.contains("academic") || cat.contains("university") {
+            return .blue  // Academic/University
+        } else if cat.contains("promotion") || cat.contains("marketing") {
+            return .pink  // Promotions/Marketing
+        } else if cat.contains("security") || cat.contains("alert") {
+            return .red  // Security/Account Alerts
+        } else if cat.contains("product") || cat.contains("service") || cat.contains("update") {
+            return .orange  // Product/Service Updates
+        } else if cat.contains("newsletter") || cat.contains("digest") {
+            return .cyan  // Newsletters/Digests
+        } else if cat.contains("administrative") || cat.contains("logistics") {
+            return .indigo  // Administrative/Logistics
+        } else if cat.contains("event") && cat.contains("invitation") {
+            return .yellow  // Event Invitations
+        } else if cat.contains("research") || cat.contains("survey") {
+            return .mint  // Research/Surveys
+        } else {
+            return .gray  // Uncategorized
         }
     }
 }
@@ -563,8 +700,8 @@ struct EmailCardView: View {
         .background(
             LinearGradient(
                 gradient: Gradient(colors: [
-                    Color(UIColor.systemBackground).opacity(0.95),
-                    Color(UIColor.secondarySystemBackground).opacity(0.9)
+                    Color(UIColor.systemBackground),
+                    Color(UIColor.secondarySystemBackground)
                 ]),
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -604,14 +741,27 @@ struct EmailCardView: View {
     }
 
     var emailSummaryView: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "envelope.fill")
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 60, height: 60)
-                .foregroundColor(.blue)
+        VStack(spacing: 15) {
+            // Small spacer to position icon in middle between subject and summary
+            Spacer()
+                .frame(maxHeight: 30)
 
-            // Summary
+            // Email Icon - clickable
+            Button(action: {
+                showingOriginalEmail = true
+            }) {
+                Image(systemName: "envelope.fill")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 80, height: 80)
+                    .foregroundColor(.blue)
+            }
+
+            // Small spacer after icon
+            Spacer()
+                .frame(maxHeight: 30)
+
+            // Summary - moved up more
             Text(card.email.summary ?? "No summary available")
                 .font(.body)
                 .multilineTextAlignment(.center)
@@ -663,7 +813,7 @@ struct EmailCardView: View {
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(width: 60, height: 60)
-                .foregroundColor(.blue)
+                .foregroundColor(.red)
 
             Text("Event Detected")
                 .font(.headline)
@@ -685,20 +835,19 @@ struct EmailCardView: View {
                 if let startDate = event.start_date, let endDate = event.end_date {
                     HStack {
                         Image(systemName: "clock")
-                        Text("\(startDate) - \(endDate)")
+                        Text("\(formatDueDate(startDate)) - \(formatDueDate(endDate))")
                     }
                 } else if let startDate = event.start_date {
                     HStack {
                         Image(systemName: "clock")
-                        Text(startDate)
+                        Text(formatDueDate(startDate))
                     }
                 }
 
                 if let notes = event.notes, !notes.isEmpty {
-                    Text(notes)
+                    ExpandableText(text: notes)
                         .font(.body)
                         .padding(.top, 5)
-                        .lineLimit(3)
                 }
             }
             .font(.subheadline)
@@ -717,7 +866,7 @@ struct EmailCardView: View {
                         .font(.headline)
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
-                        .padding()
+                        .frame(height: 50)
                         .background(Color.gray)
                         .cornerRadius(12)
                 }
@@ -729,7 +878,7 @@ struct EmailCardView: View {
                         .font(.headline)
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
-                        .padding()
+                        .frame(height: 50)
                         .background(Color.blue)
                         .cornerRadius(12)
                 }
@@ -758,18 +907,17 @@ struct EmailCardView: View {
             if let deadline = todo.due_date, !deadline.isEmpty {
                 HStack {
                     Image(systemName: "hourglass")
-                    Text("Due: \(deadline)")
+                    Text("Due: \(formatDueDate(deadline))")
                 }
                 .font(.subheadline)
                 .foregroundColor(.red)
             }
 
             if let notes = todo.notes, !notes.isEmpty {
-                Text(notes)
+                ExpandableText(text: notes)
                     .font(.body)
                     .multilineTextAlignment(.center)
                     .padding()
-                    .lineLimit(3)
             }
 
             Spacer()
@@ -783,7 +931,7 @@ struct EmailCardView: View {
                         .font(.headline)
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
-                        .padding()
+                        .frame(height: 50)
                         .background(Color.gray)
                         .cornerRadius(12)
                 }
@@ -795,7 +943,7 @@ struct EmailCardView: View {
                         .font(.headline)
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
-                        .padding()
+                        .frame(height: 50)
                         .background(Color.green)
                         .cornerRadius(12)
                 }
@@ -805,20 +953,85 @@ struct EmailCardView: View {
     }
 
     func cardBorderColor(for category: String) -> Color {
-        switch category.lowercased() {
-        case "work":
-            return .blue
-        case "personal":
-            return .green
-        case "finance":
-            return .orange
-        case "travel":
-            return .purple
-        case "shopping":
-            return .pink
-        default:
-            return .gray
+        let cat = category.lowercased()
+
+        // Check for specific categories first (more specific matches)
+        if cat.contains("personal") && cat.contains("social") {
+            return .teal  // Personal/Social
+        } else if cat.contains("personal") && (cat.contains("club") || cat.contains("outreach")) {
+            return .green  // Personal/Club Outreach
+        } else if cat.contains("club") || cat.contains("rso") {
+            return .purple  // Club/RSO Communications
+        } else if cat.contains("academic") || cat.contains("university") {
+            return .blue  // Academic/University
+        } else if cat.contains("promotion") || cat.contains("marketing") {
+            return .pink  // Promotions/Marketing
+        } else if cat.contains("security") || cat.contains("alert") {
+            return .red  // Security/Account Alerts
+        } else if cat.contains("product") || cat.contains("service") || cat.contains("update") {
+            return .orange  // Product/Service Updates
+        } else if cat.contains("newsletter") || cat.contains("digest") {
+            return .cyan  // Newsletters/Digests
+        } else if cat.contains("administrative") || cat.contains("logistics") {
+            return .indigo  // Administrative/Logistics
+        } else if cat.contains("event") && cat.contains("invitation") {
+            return .yellow  // Event Invitations
+        } else if cat.contains("research") || cat.contains("survey") {
+            return .mint  // Research/Surveys
+        } else {
+            return .gray  // Uncategorized
         }
+    }
+
+    func formatDueDate(_ dateString: String) -> String {
+        // Remove 'Z' or 'z' at the end
+        var formatted = dateString.replacingOccurrences(of: "Z", with: "").replacingOccurrences(of: "z", with: "")
+
+        // Replace any year before 2025 with 2025 for demo purposes
+        if let regex = try? NSRegularExpression(pattern: "\\b(19|20)\\d{2}\\b", options: []) {
+            let matches = regex.matches(in: formatted, options: [], range: NSRange(location: 0, length: formatted.utf16.count))
+
+            for match in matches.reversed() {
+                if let range = Range(match.range, in: formatted) {
+                    let yearString = String(formatted[range])
+                    if let year = Int(yearString), year < 2025 {
+                        formatted.replaceSubrange(range, with: "2025")
+                    }
+                }
+            }
+        }
+
+        // Remove seconds from time (e.g., "23:59:00" -> "23:59")
+        // Match pattern like :XX at the end of time portion
+        if let regex = try? NSRegularExpression(pattern: ":\\d{2}(?=[^T]*$)", options: []) {
+            if let match = regex.matches(in: formatted, options: [], range: NSRange(location: 0, length: formatted.utf16.count)).last {
+                if let range = Range(match.range, in: formatted) {
+                    formatted.removeSubrange(range)
+                }
+            }
+        }
+
+        // Try to parse the date to get day of week
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        var dayOfWeek = ""
+        if let date = isoFormatter.date(from: dateString) {
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "EEE" // 3-letter day name (MON, TUE, WED, etc.)
+            dayOfWeek = dateFormatter.string(from: date).uppercased() + ", "
+        }
+
+        // Add spaces around T: "2025-11-23T23:59" -> "2025-11-23  T  23:59"
+        if let tIndex = formatted.firstIndex(of: "T") {
+            let beforeT = String(formatted[..<tIndex])
+            let afterT = String(formatted[formatted.index(after: tIndex)...])
+            formatted = dayOfWeek + "\(beforeT)  T  \(afterT)"
+        } else {
+            formatted = dayOfWeek + formatted
+        }
+
+        return formatted
     }
 }
 
@@ -892,14 +1105,21 @@ struct ContentView: View {
                 if viewModel.isLoading {
                     ProgressView()
                 } else {
-                    Button("Login with Microsoft") {
+                    Button(action: {
                         viewModel.startLogin()
+                    }) {
+                        HStack {
+                            Image(systemName: "envelope.fill")
+                                .font(.title3)
+                            Text("Login with Microsoft")
+                                .font(.title2)
+                        }
+                        .padding()
+                        .frame(maxWidth: 300)
+                        .background(Color.blue)
+                        .foregroundColor(.white)
+                        .cornerRadius(25)
                     }
-                    .font(.title2)
-                    .padding()
-                    .background(Color.blue)
-                    .foregroundColor(.white)
-                    .cornerRadius(10)
                     
                     if let error = viewModel.errorMessage {
                         Text(error)
@@ -924,14 +1144,14 @@ struct ContentView: View {
                         Button(action: performUndo) {
                             Image(systemName: "arrow.uturn.backward.circle.fill")
                                 .font(.title2)
-                                .foregroundColor(operationHistory.canUndo ? .blue : .gray)
+                                .foregroundColor(.blue)
                         }
                         .disabled(!operationHistory.canUndo)
 
                         Button(action: performRedo) {
                             Image(systemName: "arrow.uturn.forward.circle.fill")
                                 .font(.title2)
-                                .foregroundColor(operationHistory.canRedo ? .blue : .gray)
+                                .foregroundColor(.blue)
                         }
                         .disabled(!operationHistory.canRedo)
                     }
@@ -945,7 +1165,7 @@ struct ContentView: View {
                     }) {
                         Image(systemName: "arrow.clockwise.circle.fill")
                             .font(.title2)
-                            .foregroundColor(.blue)
+                            .foregroundColor(.red)
                     }
                     .padding(.trailing)
                 }
@@ -1275,7 +1495,7 @@ struct ContentView: View {
 
                                 Text("\(groupedCards[category]?.count ?? 0)")
                                     .font(.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(categoryColor(for: category))
                             }
                             .padding(.horizontal)
 
@@ -1283,7 +1503,12 @@ struct ContentView: View {
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 12) {
                                     ForEach(groupedCards[category] ?? []) { card in
-                                        SavedCardView(card: card)
+                                        SavedCardView(card: card) {
+                                            // Delete callback
+                                            withAnimation {
+                                                savedCards.removeAll { $0.id == card.id }
+                                            }
+                                        }
                                     }
                                 }
                                 .padding(.horizontal)
@@ -1299,21 +1524,85 @@ struct ContentView: View {
     // MARK: - Helper Functions
 
     func categoryColor(for category: String) -> Color {
-        // Placeholder color system - will be enhanced later
-        switch category.lowercased() {
-        case "work":
-            return .blue
-        case "personal":
-            return .green
-        case "finance":
-            return .orange
-        case "travel":
-            return .purple
-        case "shopping":
-            return .pink
-        default:
-            return .gray
+        let cat = category.lowercased()
+
+        // Check for specific categories first (more specific matches)
+        if cat.contains("personal") && cat.contains("social") {
+            return .teal  // Personal/Social
+        } else if cat.contains("personal") && (cat.contains("club") || cat.contains("outreach")) {
+            return .green  // Personal/Club Outreach
+        } else if cat.contains("club") || cat.contains("rso") {
+            return .purple  // Club/RSO Communications
+        } else if cat.contains("academic") || cat.contains("university") {
+            return .blue  // Academic/University
+        } else if cat.contains("promotion") || cat.contains("marketing") {
+            return .pink  // Promotions/Marketing
+        } else if cat.contains("security") || cat.contains("alert") {
+            return .red  // Security/Account Alerts
+        } else if cat.contains("product") || cat.contains("service") || cat.contains("update") {
+            return .orange  // Product/Service Updates
+        } else if cat.contains("newsletter") || cat.contains("digest") {
+            return .cyan  // Newsletters/Digests
+        } else if cat.contains("administrative") || cat.contains("logistics") {
+            return .indigo  // Administrative/Logistics
+        } else if cat.contains("event") && cat.contains("invitation") {
+            return .yellow  // Event Invitations
+        } else if cat.contains("research") || cat.contains("survey") {
+            return .mint  // Research/Surveys
+        } else {
+            return .gray  // Uncategorized
         }
+    }
+
+    func formatDueDate(_ dateString: String) -> String {
+        // Remove 'Z' or 'z' at the end
+        var formatted = dateString.replacingOccurrences(of: "Z", with: "").replacingOccurrences(of: "z", with: "")
+
+        // Replace any year before 2025 with 2025 for demo purposes
+        if let regex = try? NSRegularExpression(pattern: "\\b(19|20)\\d{2}\\b", options: []) {
+            let matches = regex.matches(in: formatted, options: [], range: NSRange(location: 0, length: formatted.utf16.count))
+
+            for match in matches.reversed() {
+                if let range = Range(match.range, in: formatted) {
+                    let yearString = String(formatted[range])
+                    if let year = Int(yearString), year < 2025 {
+                        formatted.replaceSubrange(range, with: "2025")
+                    }
+                }
+            }
+        }
+
+        // Remove seconds from time (e.g., "23:59:00" -> "23:59")
+        // Match pattern like :XX at the end of time portion
+        if let regex = try? NSRegularExpression(pattern: ":\\d{2}(?=[^T]*$)", options: []) {
+            if let match = regex.matches(in: formatted, options: [], range: NSRange(location: 0, length: formatted.utf16.count)).last {
+                if let range = Range(match.range, in: formatted) {
+                    formatted.removeSubrange(range)
+                }
+            }
+        }
+
+        // Try to parse the date to get day of week
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        var dayOfWeek = ""
+        if let date = isoFormatter.date(from: dateString) {
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateFormat = "EEE" // 3-letter day name (MON, TUE, WED, etc.)
+            dayOfWeek = dateFormatter.string(from: date).uppercased() + ", "
+        }
+
+        // Add spaces around T: "2025-11-23T23:59" -> "2025-11-23  T  23:59"
+        if let tIndex = formatted.firstIndex(of: "T") {
+            let beforeT = String(formatted[..<tIndex])
+            let afterT = String(formatted[formatted.index(after: tIndex)...])
+            formatted = dayOfWeek + "\(beforeT)  T  \(afterT)"
+        } else {
+            formatted = dayOfWeek + formatted
+        }
+
+        return formatted
     }
 
     // MARK: - Undo/Redo Functions
@@ -1693,19 +1982,33 @@ struct CategorySelectorView: View {
     }
     
     func categoryColor(for category: String) -> Color {
-        switch category.lowercased() {
-        case "work":
-            return .blue
-        case "personal":
-            return .green
-        case "finance":
-            return .orange
-        case "travel":
-            return .purple
-        case "shopping":
-            return .pink
-        default:
-            return .gray
+        let cat = category.lowercased()
+
+        // Check for specific categories first (more specific matches)
+        if cat.contains("personal") && cat.contains("social") {
+            return .teal  // Personal/Social
+        } else if cat.contains("personal") && (cat.contains("club") || cat.contains("outreach")) {
+            return .green  // Personal/Club Outreach
+        } else if cat.contains("club") || cat.contains("rso") {
+            return .purple  // Club/RSO Communications
+        } else if cat.contains("academic") || cat.contains("university") {
+            return .blue  // Academic/University
+        } else if cat.contains("promotion") || cat.contains("marketing") {
+            return .pink  // Promotions/Marketing
+        } else if cat.contains("security") || cat.contains("alert") {
+            return .red  // Security/Account Alerts
+        } else if cat.contains("product") || cat.contains("service") || cat.contains("update") {
+            return .orange  // Product/Service Updates
+        } else if cat.contains("newsletter") || cat.contains("digest") {
+            return .cyan  // Newsletters/Digests
+        } else if cat.contains("administrative") || cat.contains("logistics") {
+            return .indigo  // Administrative/Logistics
+        } else if cat.contains("event") && cat.contains("invitation") {
+            return .yellow  // Event Invitations
+        } else if cat.contains("research") || cat.contains("survey") {
+            return .mint  // Research/Surveys
+        } else {
+            return .gray  // Uncategorized
         }
     }
 }

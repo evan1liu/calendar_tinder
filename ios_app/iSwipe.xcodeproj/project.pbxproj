@@ -24,9 +24,9 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		854BD70C2ED248C900443FA4 /* calendar_tinder.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = calendar_tinder.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		854BD7192ED248CA00443FA4 /* calendar_tinderTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = calendar_tinderTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		854BD7232ED248CA00443FA4 /* calendar_tinderUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = calendar_tinderUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		854BD70C2ED248C900443FA4 /* calendar_tinder.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = calendar_tinder.app; path = iSwipe.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		854BD7192ED248CA00443FA4 /* calendar_tinderTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; name = calendar_tinderTests.xctest; path = iSwipe.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		854BD7232ED248CA00443FA4 /* calendar_tinderUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; name = calendar_tinderUITests.xctest; path = iSwipe.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -186,7 +186,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 854BD7072ED248C900443FA4 /* Build configuration list for PBXProject "calendar_tinder" */;
+			buildConfigurationList = 854BD7072ED248C900443FA4 /* Build configuration list for PBXProject "iSwipe" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -395,7 +395,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 9684Z8GZ26;
+				DEVELOPMENT_TEAM = 2R3YQGKU4C;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Adding events from emails";
@@ -410,8 +410,8 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.evanliu123.calendar-tinder";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.osmondlin.calendar-tinder";
+				PRODUCT_NAME = iSwipe;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -429,7 +429,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 9684Z8GZ26;
+				DEVELOPMENT_TEAM = 2R3YQGKU4C;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Adding events from emails";
@@ -444,8 +444,8 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "com.evanliu123.calendar-tinder";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.osmondlin.calendar-tinder";
+				PRODUCT_NAME = iSwipe;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -466,7 +466,7 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 26.1;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "madhacks.calendar-tinderTests";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = iSwipe;
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
@@ -487,7 +487,7 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 26.1;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "madhacks.calendar-tinderTests";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = iSwipe;
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
@@ -506,7 +506,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "madhacks.calendar-tinderUITests";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = iSwipe;
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
@@ -525,7 +525,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "madhacks.calendar-tinderUITests";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = iSwipe;
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
@@ -539,7 +539,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		854BD7072ED248C900443FA4 /* Build configuration list for PBXProject "calendar_tinder" */ = {
+		854BD7072ED248C900443FA4 /* Build configuration list for PBXProject "iSwipe" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				854BD72B2ED248CA00443FA4 /* Debug */,
