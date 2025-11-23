@@ -11,9 +11,10 @@ struct Todo: Identifiable, Codable {
     let due_date: String?
     let priority: Int
     let isCompleted: Bool
-    
+    let formatted_date: String?
+
     enum CodingKeys: String, CodingKey {
-        case title, notes, due_date, priority, isCompleted
+        case title, notes, due_date, priority, isCompleted, formatted_date
     }
 }
 
@@ -25,9 +26,10 @@ struct Event: Identifiable, Codable {
     let start_date: String?
     let end_date: String?
     let all_day: Bool
-    
+    let formatted_date: String?
+
     enum CodingKeys: String, CodingKey {
-        case title, notes, location, start_date, end_date, all_day
+        case title, notes, location, start_date, end_date, all_day, formatted_date
     }
 }
 
@@ -832,15 +834,10 @@ struct EmailCardView: View {
                     }
                 }
 
-                if let startDate = event.start_date, let endDate = event.end_date {
-                    HStack {
+                if let formattedDate = event.formatted_date, !formattedDate.isEmpty {
+                    HStack(alignment: .top) {
                         Image(systemName: "clock")
-                        Text("\(formatDueDate(startDate)) - \(formatDueDate(endDate))")
-                    }
-                } else if let startDate = event.start_date {
-                    HStack {
-                        Image(systemName: "clock")
-                        Text(formatDueDate(startDate))
+                        Text(formattedDate)
                     }
                 }
 
@@ -904,21 +901,24 @@ struct EmailCardView: View {
                 .bold()
                 .multilineTextAlignment(.center)
 
-            if let deadline = todo.due_date, !deadline.isEmpty {
-                HStack {
-                    Image(systemName: "hourglass")
-                    Text("Due: \(formatDueDate(deadline))")
+            VStack(alignment: .leading, spacing: 8) {
+                if let formattedDate = todo.formatted_date, !formattedDate.isEmpty {
+                    HStack(alignment: .top) {
+                        Image(systemName: "hourglass")
+                        Text(formattedDate)
+                    }
                 }
-                .font(.subheadline)
-                .foregroundColor(.red)
-            }
 
-            if let notes = todo.notes, !notes.isEmpty {
-                ExpandableText(text: notes)
-                    .font(.body)
-                    .multilineTextAlignment(.center)
-                    .padding()
+                if let notes = todo.notes, !notes.isEmpty {
+                    ExpandableText(text: notes)
+                        .font(.body)
+                        .padding(.top, 5)
+                }
             }
+            .font(.subheadline)
+            .padding()
+            .background(Color(UIColor.secondarySystemGroupedBackground))
+            .cornerRadius(8)
 
             Spacer()
 
@@ -1214,8 +1214,12 @@ struct ContentView: View {
             }
 
             if viewModel.isLoading || viewModel.isRefreshing {
-                VStack(spacing: 16) {
+                VStack(spacing: 20) {
                     ProgressView()
+                        .scaleEffect(1.5)
+                    Text("Loading......")
+                        .font(.title3)
+                        .foregroundColor(.secondary)
                     if !viewModel.statusMessage.isEmpty {
                         Text(viewModel.statusMessage)
                             .font(.subheadline)
@@ -1224,6 +1228,7 @@ struct ContentView: View {
                             .padding(.horizontal)
                     }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let error = viewModel.errorMessage {
                 VStack(spacing: 16) {
                     Text("Error").font(.headline)

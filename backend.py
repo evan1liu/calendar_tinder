@@ -9,7 +9,7 @@ import uuid
 import threading
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
@@ -57,12 +57,49 @@ def save_cache(app_msal):
         with open(TOKEN_CACHE_FILE, "w") as f:
             f.write(app_msal.token_cache.serialize())
 
+def normalize_date(date_str: Optional[str]) -> str:
+    """Ensure date is at least year 2025, default to 2025-11-23 if None or invalid"""
+    if not date_str:
+        return "2025-11-23T00:00:00Z"
+
+    try:
+        # Parse the date
+        dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+
+        # If year is less than 2025, set it to 2025
+        if dt.year < 2025:
+            dt = dt.replace(year=2025)
+
+        # Return in ISO 8601 format with Z
+        return dt.strftime('%Y-%m-%dT%H:%M:%S') + 'Z'
+    except Exception as e:
+        print(f"Error normalizing date '{date_str}': {e}")
+        return "2025-11-23T00:00:00Z"
+
 class Todo(BaseModel):
     title: str
     notes: Optional[str] = None
     due_date: Optional[str] = None
     priority: int = 5
     isCompleted: bool = False
+
+    @computed_field
+    @property
+    def formatted_date(self) -> str:
+        """Format todo due date as: YYYY-MM-DD  DAY HH:MM"""
+        if not self.due_date:
+            return ""
+
+        try:
+            # Parse due date
+            due_dt = datetime.fromisoformat(self.due_date.replace('Z', '+00:00'))
+            day_name = due_dt.strftime('%a').upper()  # MON, TUE, WED, etc.
+
+            formatted = f"{due_dt.strftime('%Y-%m-%d')}  {day_name} {due_dt.strftime('%H:%M')}"
+            return formatted
+        except Exception as e:
+            print(f"Error formatting date: {e}")
+            return self.due_date or ""
 
 class Event(BaseModel):
     title: str
@@ -71,6 +108,31 @@ class Event(BaseModel):
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     all_day: bool = False
+
+    @computed_field
+    @property
+    def formatted_date(self) -> str:
+        """Format event dates as: YYYY-MM-DD  DAY HH:MM  to \n  YYYY-MM-DD  DAY HH:MM"""
+        if not self.start_date:
+            return ""
+
+        try:
+            # Parse start date
+            start_dt = datetime.fromisoformat(self.start_date.replace('Z', '+00:00'))
+            day_name = start_dt.strftime('%a').upper()  # MON, TUE, WED, etc.
+
+            formatted = f"{start_dt.strftime('%Y-%m-%d')}  {day_name} {start_dt.strftime('%H:%M')}"
+
+            # Add end date if exists
+            if self.end_date:
+                end_dt = datetime.fromisoformat(self.end_date.replace('Z', '+00:00'))
+                end_day_name = end_dt.strftime('%a').upper()
+                formatted += f"  to \n  {end_dt.strftime('%Y-%m-%d')}  {end_day_name} {end_dt.strftime('%H:%M')}"
+
+            return formatted
+        except Exception as e:
+            print(f"Error formatting date: {e}")
+            return self.start_date or ""
 
 class Email(BaseModel):
     id: str = ""
@@ -540,12 +602,25 @@ Email Body: {body}
                                 continue
                             
                             parsed = json.loads(text)
-                            
+
+                            # Normalize dates in todos and events
+                            todos_data = parsed.get('todos', [])
+                            for todo in todos_data:
+                                if 'due_date' in todo:
+                                    todo['due_date'] = normalize_date(todo.get('due_date'))
+
+                            events_data = parsed.get('events', [])
+                            for event in events_data:
+                                if 'start_date' in event:
+                                    event['start_date'] = normalize_date(event.get('start_date'))
+                                if 'end_date' in event:
+                                    event['end_date'] = normalize_date(event.get('end_date'))
+
                             # Match with original email
                             original_email = email_map.get(key)
                             if original_email:
                                 from_addr = original_email.get('from', {}).get('emailAddress', {}).get('address', 'Unknown')
-                                
+
                                 # Create Email object - USE REAL GRAPH API MESSAGE ID
                                 processed_emails.append(Email(
                                     id=original_email.get('id', str(uuid.uuid4())),  # Use Graph API message ID
@@ -556,8 +631,8 @@ Email Body: {body}
                                     body_html=original_email.get('body', {}).get('content', ''),
                                     summary=parsed.get('summary'),
                                     category=category_map.get(original_email.get('id')) if category_map else parsed.get('category'),
-                                    todos=[Todo(**t) for t in parsed.get('todos', [])],
-                                    events=[Event(**e) for e in parsed.get('events', [])]
+                                    todos=[Todo(**t) for t in todos_data],
+                                    events=[Event(**e) for e in events_data]
                                 ))
                 except Exception as line_err:
                     print(f"Error processing line {line_num}: {line_err}")
