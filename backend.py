@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from msal import PublicClientApplication, SerializableTokenCache
 import requests
 import json
@@ -16,6 +17,15 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = FastAPI()
+
+# Add CORS middleware to allow iOS app to call backend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, specify your iOS app's origin
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Using "Microsoft Graph PowerShell" Client ID
 CLIENT_ID = "14d82eec-204b-4c2f-b7e8-296a70dab67e"
@@ -48,16 +58,19 @@ def save_cache(app_msal):
             f.write(app_msal.token_cache.serialize())
 
 class Todo(BaseModel):
-    content: str
+    title: str
+    notes: Optional[str] = None
+    due_date: Optional[str] = None
+    priority: int = 5
     isCompleted: bool = False
-    completion_deadline: Optional[str] = None
 
 class Event(BaseModel):
     title: str
-    content: str
+    notes: Optional[str] = None
     location: Optional[str] = "TBD"
     start_date: Optional[str] = None
     end_date: Optional[str] = None
+    all_day: bool = False
 
 class Email(BaseModel):
     id: str = ""
@@ -210,24 +223,32 @@ def process_with_gemini_batch(emails_data: List[dict]) -> List[Email]:
     prompt_template = """
 Analyze the following email content and extract any specific Tasks (Todos) and Calendar Events.
 
-Output strictly in JSON format:
+Output strictly in JSON format matching these exact schemas:
+
 {{
   "todos": [{{
-      "content": "task description",
-      "completion_deadline": "YYYY-MM-DD HH:MM (optional, null if not found)"
+      "title": "short task title",
+      "notes": "detailed task description/notes",
+      "due_date": "YYYY-MM-DDTHH:MM:SSZ (ISO 8601 format, null if not found)",
+      "priority": 5
   }}],
   "events": [{{
-      "title": "event name",
-      "content": "detailed description of event",
+      "title": "event title (REQUIRED)",
+      "notes": "event description/details",
       "location": "event location (use 'TBD' if not specified, 'Online' for virtual events, null if truly unknown)",
-      "start_date": "YYYY-MM-DD HH:MM (use null if date not mentioned)",
-      "end_date": "YYYY-MM-DD HH:MM (use null if date not mentioned)"
+      "start_date": "YYYY-MM-DDTHH:MM:SSZ (ISO 8601 format, REQUIRED - do not include if no date found)",
+      "end_date": "YYYY-MM-DDTHH:MM:SSZ (ISO 8601 format, optional - null if not specified)",
+      "all_day": false
   }}]
 }}
 
 IMPORTANT:
-- For events, if dates are not clearly specified, use null for start_date and end_date
+- Use ISO 8601 date format with timezone (e.g., "2024-11-25T14:00:00Z")
+- ONLY create an event if BOTH title AND start_date are clearly present in the email
+- end_date is optional - if not specified, set to null (system will default to 1 hour duration)
 - For location, prefer 'TBD' over null
+- Priority for todos: 1=high, 5=medium (default), 9=low
+- all_day should be true only for full-day events (no specific times mentioned)
 - If there are no todos or events, return empty json object {{}}
 
 Email Subject: {subject}

@@ -6,31 +6,28 @@ import WebKit
 
 struct Todo: Identifiable, Codable {
     let id = UUID()
-    let content: String
-    var isCompleted: Bool
-    let completion_deadline: String?
+    let title: String
+    let notes: String?
+    let due_date: String?
+    let priority: Int
+    let isCompleted: Bool
     
     enum CodingKeys: String, CodingKey {
-        case content
-        case isCompleted
-        case completion_deadline
+        case title, notes, due_date, priority, isCompleted
     }
 }
 
 struct Event: Identifiable, Codable {
     let id = UUID()
     let title: String
-    let content: String
+    let notes: String?
     let location: String?
     let start_date: String?
     let end_date: String?
+    let all_day: Bool
     
     enum CodingKeys: String, CodingKey {
-        case title
-        case content
-        case location
-        case start_date
-        case end_date
+        case title, notes, location, start_date, end_date, all_day
     }
 }
 
@@ -291,7 +288,7 @@ class EmailViewModel: ObservableObject {
                         self.statusMessage = "No todos or events found in your emails."
                     }
                 } catch {
-                    self.errorMessage = "Failed to decode: \(error.localizedDescription)"
+                    self.errorMessage = "Failed to decode emails: \(error.localizedDescription)"
                 }
             }
         }.resume()
@@ -326,6 +323,15 @@ class EmailViewModel: ObservableObject {
     func previousCard() {
         if currentIndex > 0 {
             slideDirection = .backward
+            currentIndex -= 1
+        }
+    }
+    
+    func removeCurrentCard() {
+        guard !cards.isEmpty && currentIndex < cards.count else { return }
+        cards.remove(at: currentIndex)
+        // If we removed the last card, adjust index
+        if currentIndex >= cards.count && currentIndex > 0 {
             currentIndex -= 1
         }
     }
@@ -377,10 +383,11 @@ struct CardView: View {
                             }
                         }
                         
-                        if !event.content.isEmpty {
-                             Text(event.content)
+                        if let notes = event.notes, !notes.isEmpty {
+                             Text(notes)
                                 .font(.body)
                                 .padding(.top, 5)
+                                .lineLimit(3)
                         }
                     }
                     .font(.subheadline)
@@ -418,18 +425,26 @@ struct CardView: View {
                         .font(.headline)
                         .foregroundColor(.secondary)
                     
-                    Text(todo.content)
+                    Text(todo.title)
                         .font(.title2)
                         .bold()
                         .multilineTextAlignment(.center)
                     
-                    if let deadline = todo.completion_deadline, !deadline.isEmpty {
+                    if let deadline = todo.due_date, !deadline.isEmpty {
                         HStack {
                             Image(systemName: "hourglass")
                             Text("Due: \(deadline)")
                         }
                         .font(.subheadline)
                         .foregroundColor(.red)
+                    }
+                    
+                    if let notes = todo.notes, !notes.isEmpty {
+                        Text(notes)
+                            .font(.body)
+                            .multilineTextAlignment(.center)
+                            .padding()
+                            .lineLimit(3)
                     }
                     
                     // View Original Email Button
@@ -475,6 +490,10 @@ struct CardView: View {
 
 struct ContentView: View {
     @StateObject var viewModel = EmailViewModel()
+    @StateObject var eventService = IntegratedEventService()
+    
+    // Gesture State
+    @State private var offset = CGSize.zero
     
     var body: some View {
         Group {
@@ -670,48 +689,128 @@ struct ContentView: View {
                     
                     Spacer()
                     
-                    // Middle: Card Deck
-                    // We only show the current card for simplicity with the current arrow navigation
-                    CardView(card: viewModel.cards[viewModel.currentIndex])
-                        .transition(.asymmetric(
-                            insertion: .move(edge: viewModel.slideDirection == .forward ? .trailing : .leading),
-                            removal: .move(edge: viewModel.slideDirection == .forward ? .leading : .trailing)
-                        ))
-                        .id(viewModel.currentIndex) // Force redraw for transition
+                    // Middle: Card Deck with Swipe Gestures
+                    ZStack {
+                        // Show next card below for visual effect
+                        if viewModel.currentIndex < viewModel.cards.count - 1 {
+                            CardView(card: viewModel.cards[viewModel.currentIndex + 1])
+                                .scaleEffect(0.95)
+                                .offset(y: 10)
+                        }
+                        
+                        // Current Card
+                        CardView(card: viewModel.cards[viewModel.currentIndex])
+                            .offset(x: offset.width, y: 0)
+                            .rotationEffect(.degrees(Double(offset.width / 20)))
+                            .gesture(
+                                DragGesture()
+                                    .onChanged { gesture in
+                                        offset = gesture.translation
+                                    }
+                                    .onEnded { _ in
+                                        if offset.width > 100 {
+                                            handleSwipeRight()
+                                        } else if offset.width < -100 {
+                                            handleSwipeLeft()
+                                        } else {
+                                            withAnimation { offset = .zero }
+                                        }
+                                    }
+                            )
+                    }
                     
                     Spacer()
                     
-                    // Bottom: Navigation
-                    HStack(spacing: 40) {
-                        Button(action: {
-                            withAnimation { viewModel.previousCard() }
-                        }) {
-                            Image(systemName: "arrow.left.circle.fill")
-                                .resizable()
-                                .frame(width: 50, height: 50)
-                                .foregroundColor(viewModel.currentIndex > 0 ? Color.accentColor : Color.gray)
-                        }
-                        .disabled(viewModel.currentIndex == 0)
-                        
-                        Text("\(viewModel.currentIndex + 1) / \(viewModel.cards.count)")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                        
-                        Button(action: {
-                            withAnimation { viewModel.nextCard() }
-                        }) {
-                            Image(systemName: "arrow.right.circle.fill")
-                                .resizable()
-                                .frame(width: 50, height: 50)
-                                .foregroundColor(viewModel.currentIndex < viewModel.cards.count - 1 ? Color.accentColor : Color.gray)
-                        }
-                        .disabled(viewModel.currentIndex == viewModel.cards.count - 1)
+                    // Success/Error Messages
+                    if let msg = eventService.lastSuccessMessage {
+                        Text(msg).foregroundColor(.green).font(.caption).padding()
                     }
-                    .padding(.bottom, 30)
+                    if let err = eventService.lastError {
+                        Text(err.localizedDescription).foregroundColor(.red).font(.caption).padding()
+                    }
+                    
+                    // Card counter at bottom
+                    Text("\(viewModel.currentIndex + 1) / \(viewModel.cards.count)")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .padding(.bottom, 30)
                 }
             }
         }
         .background(Color(UIColor.systemGroupedBackground).edgesIgnoringSafeArea(.all))
+    }
+    
+    // MARK: - Swipe Handlers
+    
+    private func handleSwipeRight() {
+        let card = viewModel.cards[viewModel.currentIndex]
+        let currentViewModel = viewModel // Capture reference
+        
+        Task {
+            switch card.type {
+            case .event(let event):
+                // Parse start date (required for events)
+                guard let startDateStr = event.start_date,
+                      let start = ISO8601DateFormatter().date(from: startDateStr) else {
+                    // Should not happen if prompt is followed correctly
+                    await MainActor.run {
+                        eventService.lastError = NSError(domain: "Invalid event start date", code: -1)
+                    }
+                    return
+                }
+                
+                // Parse end date or default to 1 hour after start
+                let end: Date
+                if let endDateStr = event.end_date,
+                   let parsedEnd = ISO8601DateFormatter().date(from: endDateStr) {
+                    end = parsedEnd
+                } else {
+                    // Default: 1 hour duration
+                    end = start.addingTimeInterval(3600)
+                }
+                
+                _ = await eventService.addCalendarEvent(
+                    title: event.title,
+                    startDate: start,
+                    endDate: end,
+                    location: event.location,
+                    notes: event.notes,
+                    isAllDay: event.all_day
+                )
+                
+            case .todo(let todo):
+                let due = ISO8601DateFormatter().date(from: todo.due_date ?? "")
+                _ = await eventService.addReminder(
+                    title: todo.title,
+                    notes: todo.notes,
+                    dueDate: due,
+                    priority: todo.priority
+                )
+            }
+            
+            await MainActor.run { [weak currentViewModel] in
+                guard let vm = currentViewModel else { return }
+                withAnimation {
+                    self.offset = CGSize(width: 500, height: 0)
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak vm] in
+                    vm?.removeCurrentCard()
+                    self.offset = .zero
+                }
+            }
+        }
+    }
+    
+    private func handleSwipeLeft() {
+        let currentViewModel = viewModel // Capture reference
+        
+        withAnimation {
+            offset = CGSize(width: -500, height: 0)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak currentViewModel] in
+            currentViewModel?.removeCurrentCard()
+            self.offset = .zero
+        }
     }
 }
 
