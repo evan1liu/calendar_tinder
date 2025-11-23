@@ -398,7 +398,7 @@
 				DEVELOPMENT_TEAM = 9684Z8GZ26;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "";
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Adding events from emails";
 				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Adding todos from emails";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -432,7 +432,7 @@
 				DEVELOPMENT_TEAM = 9684Z8GZ26;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "";
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Adding events from emails";
 				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Adding todos from emails";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;

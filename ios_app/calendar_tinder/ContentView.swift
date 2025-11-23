@@ -478,7 +478,6 @@ class EmailViewModel: ObservableObject {
 
 struct SavedCardView: View {
     let card: EmailCard
-    let onDelete: () -> Void
     @State private var showingOriginalEmail = false
 
     var body: some View {
@@ -497,14 +496,6 @@ struct SavedCardView: View {
                     .cornerRadius(8)
 
                 Spacer()
-
-                Button(action: {
-                    onDelete()
-                }) {
-                    Image(systemName: "trash")
-                        .foregroundColor(.red)
-                        .font(.caption)
-                }
             }
         }
         .padding()
@@ -883,58 +874,20 @@ struct ContentView: View {
 
     var loginInterface: some View {
         VStack(spacing: 30) {
-            Text("Hello, Welcome to iSwipe")
+            // App Icon
+            Image("iswipe_icon")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 120, height: 120)
+                .cornerRadius(25)
+                .shadow(color: Color.black.opacity(0.2), radius: 10, x: 0, y: 5)
+            
+            Text("Welcome to iSwipe")
                 .font(.largeTitle)
                 .bold()
             
             if let code = viewModel.loginCode, let url = viewModel.loginUrl {
-                VStack(spacing: 20) {
-                    Text("Please login to your Microsoft Account")
-                        .font(.headline)
-                    
-                    Text("1. Copy this code:")
-                        .foregroundColor(.secondary)
-                    
-                    Text(code)
-                        .font(.system(size: 40, weight: .bold, design: .monospaced))
-                        .padding()
-                        .background(Color(UIColor.secondarySystemBackground))
-                        .cornerRadius(10)
-                        .onTapGesture {
-                            UIPasteboard.general.string = code
-                            let impactMed = UIImpactFeedbackGenerator(style: .medium)
-                            impactMed.impactOccurred()
-                        }
-                    
-                    Text("(Tap code to copy)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    
-                    Text("2. Open the login page:")
-                        .foregroundColor(.secondary)
-                    
-                    Link("Open Login Page", destination: URL(string: url)!)
-                        .font(.headline)
-                        .padding()
-                        .background(Color.blue)
-                        .foregroundColor(.white)
-                        .cornerRadius(10)
-                    
-                    if viewModel.isWaitingForLogin {
-                        VStack {
-                            ProgressView()
-                            Text("Waiting for you to login...")
-                                .foregroundColor(.secondary)
-                        }
-                        .padding(.top)
-                    }
-                }
-                .padding()
-                .background(Color(UIColor.systemBackground))
-                .cornerRadius(20)
-                .shadow(radius: 5)
-                .padding()
-                
+                LoginCodeView(code: code, url: url, isWaitingForLogin: viewModel.isWaitingForLogin)
             } else {
                 if viewModel.isLoading {
                     ProgressView()
@@ -1330,11 +1283,7 @@ struct ContentView: View {
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 12) {
                                     ForEach(groupedCards[category] ?? []) { card in
-                                        SavedCardView(card: card, onDelete: {
-                                            withAnimation {
-                                                savedCards.removeAll { $0.id == card.id }
-                                            }
-                                        })
+                                        SavedCardView(card: card)
                                     }
                                 }
                                 .padding(.horizontal)
@@ -1591,6 +1540,86 @@ struct ContentView: View {
                 viewModel.removeCurrentCard()
                 offset = .zero
                 showConfetti = false
+            }
+        }
+    }
+}
+
+// MARK: - Category Selector View
+
+struct LoginCodeView: View {
+    let code: String
+    let url: String
+    let isWaitingForLogin: Bool
+    
+    @State private var isCopied = false
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            Text("Please login to your Microsoft Account")
+                .font(.headline)
+            
+            Text("1. Copy this code:")
+                .foregroundColor(.secondary)
+            
+            // Code display
+            Text(code)
+                .font(.system(size: 40, weight: .bold, design: .monospaced))
+                .padding()
+                .frame(maxWidth: .infinity)
+                .background(Color(UIColor.secondarySystemBackground))
+                .cornerRadius(10)
+                .onTapGesture {
+                    copyCode()
+                }
+            
+            Text(isCopied ? "Code copied to clipboard!" : "(Tap code to copy)")
+                .font(.caption)
+                .foregroundColor(isCopied ? .green : .secondary)
+                .animation(.easeInOut, value: isCopied)
+            
+            Text("2. Open the login page:")
+                .foregroundColor(.secondary)
+            
+            Link("Open Login Page", destination: URL(string: url)!)
+                .font(.headline)
+                .padding()
+                .background(Color.blue)
+                .foregroundColor(.white)
+                .cornerRadius(10)
+            
+            if isWaitingForLogin {
+                VStack {
+                    ProgressView()
+                    Text("Waiting for you to login...")
+                        .foregroundColor(.secondary)
+                }
+                .padding(.top)
+            }
+        }
+        .padding()
+        .background(Color(UIColor.systemBackground))
+        .cornerRadius(20)
+        .shadow(radius: 5)
+        .padding()
+    }
+    
+    private func copyCode() {
+        UIPasteboard.general.string = code
+        
+        // Haptic feedback
+        let impactMed = UIImpactFeedbackGenerator(style: .medium)
+        impactMed.impactOccurred()
+        
+        // Show text feedback
+        withAnimation {
+            isCopied = true
+        }
+        
+        // Hide text feedback after 2 seconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            withAnimation {
+                isCopied = false
             }
         }
     }
